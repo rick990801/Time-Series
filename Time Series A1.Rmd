@@ -1,0 +1,278 @@
+---
+title: "Stats 326"
+author: "Richard Choi"
+date: "28/3/2022"
+output:
+  pdf_document: default
+  html_document:
+    df_print: paged
+---
+
+# Problem 1
+
+1. Import this file into R and convert it to a tsibble object. 4 marks
+
+Note: Please ensure that the time zone is changed to CET/CEST.
+```{r}
+library(lubridate)
+library(tidyverse)
+library(tsibble)
+library(fpp3)
+```
+
+```{r}
+energy.df = read_csv("energy.csv")
+
+energy_tsibble = energy.df %>%
+  mutate('Time (CET)' = with_tz(energy.df$`Time (UTC)`, tzone = 'Europe/Berlin')) %>%
+  as_tsibble(index = 'Time (CET)')
+
+energy_tsibble
+```
+
+2. Create a new tsibble containing daily electricity consumption, solar and wind power generation in GW (gigawatt). 4 marks
+
+```{r}
+energy_tsibble$`Date (CET)` = as_date(energy_tsibble$`Time (CET)`)
+
+daily_energy_tsibble = energy_tsibble %>%
+  index_by(`Date (CET)`) %>%
+  summarise(daily_electricity = sum(Consumption)/1000, 
+            daily_solar = sum(Solar)/1000,
+            daily_wind = sum(Wind)/1000)
+
+tail(daily_energy_tsibble)
+
+```
+
+3. Plot the daily electricity consumption in Germany and comment on what you can observe. 4 marks
+
+```{r fig.width=15}
+daily_energy_tsibble %>%
+  autoplot(daily_electricity) + ylab("Daily Electricity (GW)") + xlab("Year") + 
+  ggtitle("Daily electricity consumption in Germany")
+
+```
+
+The time series plot shows an overall slight increasing trend over the period between 2017 and 2020. 
+In Germany, Summer runs from June to August and Winter runs from December to February. For seasonality, we can see a daily electricity consumption increases around the the first quarter and then decreases around the mid year then increase back again last quarter of the year. This could be due to people using more electricity to keep themselves warm due to Winter. We can also see a sudden drop between Q1 and Q4 of the year, it could be due to people going on holidays but more studies should be conducted to find the insight.
+
+
+4. Draw separate scatter plots for daily electricity consumption, solar, and wind power generation against the date. The points on each plot should be colored based on whether the day is a weekday or not. Comment on what you can observe. 16 marks
+
+```{r}
+daily_energy_tsibble %>%
+  ggplot(aes(`Date (CET)`, daily_electricity, color=weekdays(`Date (CET)`) %in% c("Saturday", "Sunday"))) + geom_point(na.rm=TRUE) + scale_color_discrete(name="Is Weekend") + 
+  ggtitle("Daily electricity (GW) consumption from 2015 to 2020 in Germany") + xlab("Year") +
+  ylab("Daily Electricity")
+
+daily_energy_tsibble %>%
+  ggplot(aes(`Date (CET)`, daily_solar, color=weekdays(`Date (CET)`) %in% c("Saturday", "Sunday"))) + geom_point(na.rm=TRUE) + scale_color_discrete(name="Is Weekend") + 
+  ggtitle("Daily solar generation (GW) from 2015 to 2020 in Germany") + xlab("Year") + 
+  ylab("Daily Solar")
+
+
+daily_energy_tsibble %>%
+  ggplot(aes(`Date (CET)`, daily_wind, color=weekdays(`Date (CET)`) %in% c("Saturday", "Sunday"))) + geom_point(na.rm=TRUE) + scale_color_discrete(name="Is Weekend") + 
+  ggtitle("Daily wind generation (GW) from 2015 to 2020 in Germany") + xlab("Year") +
+  ylab("Daily Wind")
+
+```
+
+We can see from the daily electricity consumption plot, people in Germany used more electricity in the weekdays than the weekends on average. As previously mentioned, there is a peak around Q1 and Q4 of the year and trough around mid year. We can also see a positive trend form 2015 to 2018 then a decreasing trend from 2018 onwards for both weekdays and weekends.
+
+For the daily solar and wind generation, there doesn't seem to be significant difference between weekdays and weekends. This could be due to the fact that solar and energy power supply were plotted so the demand hasn't affected it. For both energy, we can see a clear increasing trend from 2015 to 2020. For solar, we can see a peak around mid year and peak around early and end of the year as the period June to August is a Summer season in Germany and the period December and February is Winter season. Since there are more sunlight in Summer season, it is more efficient to generate Solar energy. On the other hand, the daily wind generation plot shows a random amount of wind generation except for the Winter period. We can see a fair amount of data points in mid to high side of daily wind axis. This could be due to, in Winter in general, it's more windier than other seasons.
+
+5. Draw a seasonal plot for the daily electricity consumption and comment on what you can observe. 3 marks
+
+```{r}
+daily_energy_tsibble %>%
+  gg_season(daily_electricity) + labs(title = "Season plot for the daily electricity consumption") + xlab("Month") + ylab("Daily Electricity (GW)")
+
+
+```
+
+The time series is over plotted so it is hard to observe but we can see an increase in daily electricity consumption around  January and a gradual decrease till around July then a gradual increase in around November and early December. We then see a decrease in late December. By looking at the color of the year, it looks like in 2018 there has been the highest daily electricity consumption and lowest in 2020. 
+
+
+6. What can we do to avoid overplotting the series in the seasonal plot constructed in part 5? Draw the plot you have suggested. 3 marks
+
+```{r fig.height=10, fig.width=15}
+daily_energy_tsibble %>%
+  ggplot(aes(x=`Date (CET)`, y=daily_electricity, color=as.factor(year(`Date (CET)`)))) +
+  geom_line() + ylab("Daily Electricity (GW)") + xlab("Year") + labs(color="Year") +
+  facet_wrap(~year(`Date (CET)`), scales='free')
+
+
+```
+
+7. Extract all the records for the year 2019.
+a. Draw a seasonal plot for the daily electricity consumption and comment on what you can observe. 5 marks
+
+```{r}
+daily_energy_tsibble %>%
+  filter(year(`Date (CET)`) == "2019") %>%
+  gg_season(daily_electricity) + ggtitle("Seasonal plot for daily electricity consumption in Germany 2019") + 
+  ylab("Daily Electricity (GW)") + xlab("Month")
+```
+
+The time series shows a peak around February at 1650 GW approximately and a trough around mid April at 950 GW approximately over the year. We can see a trend decreasing from January to mid August then increasing till mid November to early December then decreasing till late December. There is a seasonality in the plot as there will be differences in electricity consumption on weekdays and weekends.
+
+b. Draw other appropriate seasonal plots for the daily electricity consumption and comment on what you can observe. 4 marks
+
+```{r}
+daily_energy_tsibble %>%
+  filter(year(`Date (CET)`) == "2019") %>%
+  gg_season(period="week") +labs(y="Daily Electricity (GW)", x="Days", 
+                                 title="Seasonal plot for daily electricity consumption")
+
+daily_energy_tsibble %>%
+  filter(year(`Date (CET)`) == "2019") %>%
+  gg_season(period="month") +labs(y="Daily Electricity (GW)", x="Months", 
+                                 title="Seasonal plot for daily electricity consumption by month")
+
+daily_energy_tsibble %>%
+  filter(year(`Date (CET)`) == "2019") %>%
+  filter(weekdays(`Date (CET)`) == "Monday") %>%
+  filter(daily_electricity < 1250)
+
+
+```
+
+For the year 2019, we can see an overall trend for the daily electricity consumption (GW) in Germany stable and falling once it hits weekends. This could be due to people going out in the weekends so we see a reduction in the consumption.
+We can see the orange and pink line on the top of the graph, which denotes the W10 and W50 which is lies on the Winter season and turquoise line represents W50. This makes sense as people are likely to use electricity for heat during Winter than Summer.
+
+There were some outliers so I investigated the data and it shows the dates 2019 4-22, 2019 6-10, 2019 12-23, 2019 12-30 had lower electricity consumption on average. More studies should be conducted to investigate the data.
+
+For the seasonal plot by month, we can see that the the Winter season has higher consumption on average as shown previous plots. There doesn't seem to be much variation in consumption within the same month but there are differences across different months.
+
+8. Repeat parts a–b in 7 for solar and wind power generation. 12 marks
+```{r}
+daily_energy_tsibble %>%
+  filter(year(`Date (CET)`) == "2019") %>%
+  gg_season(daily_solar) + ggtitle("Seasonal plot for daily solar generation (GW) in Germany 2019") + 
+  ylab("Daily Solar") + xlab("Month")
+
+daily_energy_tsibble %>%
+  filter(year(`Date (CET)`) == "2019") %>%
+  gg_season(daily_solar, period='week') + ggtitle("Seasonal plot for daily solar generation (GW) in Germany 2019") + 
+  ylab("Daily Solar") + xlab("Day")
+
+daily_energy_tsibble %>%
+  filter(year(`Date (CET)`) == "2019") %>%
+  gg_season(daily_solar, period='month') + ggtitle("Seasonal plot for daily solar generation (GW) in Germany 2019") + 
+  ylab("Daily Solar") + xlab("Month")
+
+
+daily_energy_tsibble %>%
+  filter(year(`Date (CET)`) == "2019") %>%
+  gg_season(daily_wind) + ggtitle("Seasonal plot for daily wind generation (GW) in Germany 2019") + 
+  ylab("Daily Wind") + xlab("Month")
+
+daily_energy_tsibble %>%
+  filter(year(`Date (CET)`) == "2019") %>%
+  gg_season(daily_wind, period='week') + ggtitle("Seasonal plot for daily wind generation (GW) in Germany 2019") + 
+  ylab("Daily Wind") + xlab("Day")
+
+daily_energy_tsibble %>%
+  filter(year(`Date (CET)`) == "2019") %>%
+  gg_season(daily_wind, period='month') + ggtitle("Seasonal plot for daily wind generation (GW) in Germany 2019") + 
+  ylab("Daily Wind") + xlab("Month")
+```
+
+For the year 2019 daily solar generation, we can see a increasing trend from January till about July then a decreasing trend till December.
+This is highly likely due to the Summer season as previously mentioned. For the weekly seasonality plot, we can see the W30, W40, W20 are on the high end of the spectrum whereas W10 and W50, this is likely to be due to the Summer season effect as well. We see a higher variability in W30, W40, and W20 in comparison to the W10 and W50. This may be due to the fact in Winter season there is no consistent sunlight exposure.
+Likewise the seasonal plot for the month shows clear distinction in daily solar generation in Summer season as opposed to the winter season. For summer we can see that there are higher variation in solar energy generated than the winter.
+
+For the year 2019 daily wind generation, we can see a decreasing trend from January till about July then an increasing trend till the end of the year. As mentioned, this is likely to be due to seasonal factor where Winter and Autumn is windier than Spring and Summer. We can also see an increase in variability in Winter and Autumn season as opposed to Spring and Summer season. This is likely to be due to the variability in strength of wind in seasons. 
+On the other hand, the weekly seasonal plot shows early and end of the year shows high daily solar generation with higher variability than the the rest of the weeks. Likewise, this could be due to wind being more variable in Winter season than other seasons.
+Likewise the seasonal plot for the month shows a higher wind gerneation during Winter season than the summer season with higher variation.
+
+# Problem 2
+```{r}
+
+# Use your student ID as the seed
+set.seed(915726645)
+myts <- aus_retail %>%
+  filter(
+    `Series ID` == sample(aus_retail$`Series ID`, 1)
+  )
+
+```
+1. Plot your time series using the autoplot(), gg_season(), gg_subseries(), gg_lag() and ACF() functions. Comment on what you can observe. 19 marks
+
+```{r}
+myts %>%
+  autoplot() 
+
+myts %>%
+  gg_season()
+
+myts %>%
+  gg_subseries()
+
+myts %>%
+  gg_lag()
+
+myts %>%
+  ACF(Turnover) %>%
+  autoplot()
+
+myts %>%
+  filter(as.character(Month)=="1995 Dec")
+
+myts %>%
+  filter(as.character(Month)=="1998 Jan")
+```
+
+We can see that the time series shows an overall increase in retail turnover trend (non-linear). For seasonality, we can see that there is a peak around December and drop in start of January then rising again. This could be due to people doing Christmas/Boxing day shopping. There is a sudden spike around 1995 Dec and drop in 1998 Jan from Clothing retailing.
+We can also see cyclicity due to the business cycle. There are cycles between 1990 to 1998, 2000 to 2007/2008 where they could be affected from dot com bubble and global financial crisis respectively.
+
+For the seasonal plot, we can see there is a gradual increase in retail turnover over the years. On average, it looks like Feburary has a drop in turnover and an overall increase till July then a drop till November then a spike in December. Although there are lots of factors, it seems like people tend to spend the most during the end of the year for Christmas shopping and July for Winter Sale.
+
+For the subseries plot, we can see month July and December have the highest mean whereas Feburary has the lowest mean; the trend overall is positive. For each month, the turnover is the lowest in 1990 then surge around 1995 the drop around 2000 then pick up till 2018.
+
+For the lag plot, we can see overall positive linear relationships especially in lag 1 which is an indicative of autocorrelation. 
+
+For the correlogram, we can see that autocorrelation coefficient is highest at lag 1 and lag 12. The data shows trend so lag 1 is positive and large because observations nearby in time are also nearby in magnitude. Also the data is collected monthly and is seasonal so lag 12 and lag 24 tend to be bigger than the other seasons. Other lags such as 6 and 18 shows lower coefficient because seasonal troughs tend to be 6 months apart (two quarters).
+
+2. Find an appropriate Box-Cox transformation for your data and explain why you have chosen the particular transformation parameter λ. 6 marks
+```{r}
+myts %>%
+  autoplot(Turnover)
+
+# natural logarithm
+myts %>%
+    autoplot(box_cox(Turnover, 0))
+
+# square root + linear transformation
+myts %>%
+    autoplot(box_cox(Turnover, 0.5))
+
+myts %>%
+    autoplot(box_cox(Turnover, 0.8))
+
+
+lambda = myts %>% 
+  features(Turnover, features=guerrero) %>%
+  pull(lambda_guerrero)
+
+myts %>% autoplot(box_cox(Turnover, lambda))
+```
+
+We can see a non - linear trend and increase in variation in seasonality as year passes. Therefore, we should try to apply a transformation to stabilise the variability. It looks like natural logarithm transformed the data for the manual approach. Using the automatic approach, we have got lambda of 0.15 and it looks more stabilised.
+
+
+
+3. Produce a plot of an STL decomposition of the untransformed or transformed data based on your choice above. Explain what you learn. 5 marks
+
+```{r}
+# Transformed data
+dcmp <- myts %>%
+model(stl = STL((Turnover^lambda-1)/lambda))
+components(dcmp) %>%
+  autoplot()
+
+```
+
+Comparing transformed and untransformed data through STL decomposition plot, I can see the seasonality and the remainder have been stabilised. The untransformed data showed increased variability as year passes but with transformation the variability has been reduced. On the other hand, we learn that the transformation has not affected trend much. Since the data is in the dollar figure so it could be beneficial for us to adjust by inflation. By adjusting the inflation, we can see whether the Australian retail turnover has actually increase or decrease to reflect the economic direction of the Australian retail industry.
