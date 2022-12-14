@@ -1,0 +1,328 @@
+---
+title: "Stats 326 A2"
+author: "Richard Choi"
+date: '2022-04-15'
+output: html_document
+---
+# Problem 1
+
+# Create a training dataset consisting of observations before 2011 and plot the training data.
+```{r}
+library(fpp3)
+# Use your student ID as the seed
+set.seed(915726645)
+myts <- aus_retail %>%
+  filter(
+    `Series ID` == sample(aus_retail$`Series ID`, 1)
+  )
+
+myts_train = myts %>%
+  filter(year(Month) < 2011)
+
+myts_train %>%
+  autoplot(Turnover)
+
+```
+
+# Depending on the patterns present in your data, apply a reasonable forecasting benchmark to your training data. Explain why you have chosen this benchmark. 
+```{r}
+myts_train %>% 
+  filter(!is.na(Turnover)) %>%
+  model(SNAIVE(Turnover ~ drift())) %>% 
+  forecast(h = "8 years") %>%
+  autoplot(myts_train)
+
+```
+The plot shows both positive trend and seasonality so seasonal naive with drift was chosen. 
+# Check the residuals of your fitted model. Comment on what you can observe. 
+```{r}
+myts_train %>%
+  model(snaive_drift = SNAIVE(Turnover ~ drift())) %>%
+  select(snaive_drift) %>%
+  gg_tsresiduals()
+
+
+```
+The residuals are randomly scattered around zero and have a constant variance except for the period between 1995 and 1997. The residual shows a weak pattern so it means the model we have fitted isn't too great.
+ACF plot shows most of correlations are significant. This means that the model has not taken into account.
+The histogram looks normal, centered around 0.
+
+
+# Produce forecasts for the test data. Plot the forecasts against the actual values. .
+```{r}
+
+# fitting a model using training data set
+fit = myts_train %>%
+  model(snaive_drift = SNAIVE(Turnover ~ drift()))
+
+fc = fit %>%
+  forecast(h = "8 years")
+
+myts_test = myts %>% 
+  filter(year(Month) >= 2011)
+
+fc %>%
+  autoplot(myts_test, level=NULL)
+
+```
+
+
+# Compare the accuracy of your fitted values and forecasts against the actual values. 
+```{r}
+# finding the accuracy 
+accuracy(fit)
+
+# finding the accuracy of forecast against the actual values
+accuracy(fc, myts)
+```
+Comparing the accuracy of the fitted value and forecasts against the actual values, we can see that the root mean squared error is (98.47%) lower in comparison to accuracy of the fitted model (99.89%). 
+
+# Problem 2
+```{r}
+library(tidyverse)
+library(lubridate)
+library(GGally)
+
+```
+
+# Draw time plots for daily electricity demand (in GW) and temperature. Comment on what you can observe. 
+```{r}
+vic_temperature_2014 = read_csv("vic_temperature_2014.csv")
+vic_electricity_2014 = read_csv("vic_electricity_2014.csv")
+
+adj_vic_electrcity_2014 = vic_electricity_2014
+  
+adj_vic_electrcity_2014$Date = as_date(adj_vic_electrcity_2014$Date, origin="1899-12-30")
+
+# adjusting so that period 1 = 0 and period 2 = 30
+adj_vic_electrcity_2014$Period = minutes(adj_vic_electrcity_2014$Period - 1) * 30 
+
+time = paste(time_length(adj_vic_electrcity_2014$Period, unit="minutes")%/%60, time_length(adj_vic_electrcity_2014$Period, unit="minutes")%%60, "00",sep=":")
+
+adj_vic_electrcity_2014= adj_vic_electrcity_2014 %>%
+  mutate(Time = time)
+
+adj_vic_electrcity_2014= adj_vic_electrcity_2014 %>%
+  mutate(unite(adj_vic_electrcity_2014, col="DateTime", c('Date', 'Time'), sep= " "))
+
+# to account for 1 hour difference between Brisbane and Melbourne
+adj_vic_electrcity_2014$DateTime = adj_vic_electrcity_2014$DateTime %>%
+  as_datetime("Australia/Brisbane") %>%
+  with_tz(tzone="Australia/Melbourne")
+
+adj_vic_electrcity_2014$DateTime = adj_vic_electrcity_2014$DateTime - dhours(1)
+
+# 3am after 1:30am 
+adj_vic_electrcity_2014 %>%
+  filter(ymd(Date) == "2014-10-05") %>%
+  head(n=10)
+
+vic_electricity_2014_group = adj_vic_electrcity_2014 %>%
+  group_by(adj_date = as_date(DateTime)) %>%
+  select(adj_date, Demand) %>%
+  summarise(daily_electricity = sum(Demand)/1000)
+  
+vic_electricity_2014_tsibble = vic_electricity_2014_group %>%
+  as_tsibble(index = 'adj_date') 
+
+
+
+
+adj_vic_temperature_2014 = vic_temperature_2014 %>%
+  mutate(unite(vic_temperature_2014, col="Date", c('Year', 'Month', 'Day'), sep= "-")) 
+
+# changing the date type to 'date'
+adj_vic_temperature_2014$Date = adj_vic_temperature_2014$Date %>% ymd()
+
+vic_temperature_2014_tsibble = adj_vic_temperature_2014 %>%
+  as_tsibble(index = 'Date')
+
+# time plot for electricity
+vic_electricity_2014_tsibble %>%
+  autoplot(daily_electricity) + ylab("Daily Electricity (GW)") + xlab("Year") + 
+  ggtitle("Daily electricity demand in Victoria (GW) in 2014")
+
+# time plot for temperature
+vic_temperature_2014_tsibble %>%
+  autoplot(`Maximum temperature (Degree C)`) + xlab("Year") + 
+  ggtitle("Daily temperature in Victoria (GW) in 2014")
+  
+  
+```
+
+# Use an appropriate plot to determine the relationship between daily electricity demand (in GW) and temperature. Comment on what you can observe. 
+```{r}
+merge.tsibble = merge(vic_electricity_2014_tsibble, vic_temperature_2014_tsibble, by.x="adj_date", by.y="Date")
+merge.tsibble %>% 
+  ggpairs(columns = c(2, 6))
+
+plot(merge.tsibble$`Maximum temperature (Degree C)`, merge.tsibble$daily_electricity, xlab="Maximum temperature (Degree C)", ylab="Electricity Demand (GW)", main="Maximum temperature and Electricity Demand in Victoria 2014")
+```
+
+We can see a culvature in the scatterplot which is an indicative of a pattern. A very low correlationis shown which may indicate there is no correlation between daily electricity demand and the maximum temperature in Victoria. The density plot for daily electricity shows there is a peak around 225 and a trough around 275. Whereas the density plot for the maximum temperature shows a peak around 20 and decreases till about 40.
+
+# Create a variable that determines whether a given date in 2014 is a working day or not. Table 1 summarizes public holidays for Victoria in 2014. 
+```{r}
+vic_public_holidays = c("1/1/14", "27/1/14", "10/3/14", "18/4/14", "21/4/14", "25/4/14", "9/6/14", "4/11/14", 
+                        "25/12/14", "26/12/14") %>%
+  dmy()
+
+
+merge.tsibble = merge.tsibble %>%
+  mutate(public_holiday = ifelse(adj_date %in% vic_public_holidays, 1, 0)) %>%
+  as_tsibble()
+```
+
+# Using the variable created in part 3 and the maximum daily temperature, fit the following models to predict the daily electricity demand (in GW). 
+
+# A piecewise linear function of temperature and seasonal dummy variables for weekly seasonality. You have to find a knot based on the plot obtained in part 2.
+
+```{r}
+
+
+merge.tsibble = merge.tsibble %>%
+  mutate(TempKnot = ifelse(`Maximum temperature (Degree C)` < 25, 0, `Maximum temperature (Degree C)`-25)) %>%
+  as_tsibble()
+
+
+fit1 = merge.tsibble %>%
+  model(piecewise=TSLM(daily_electricity ~ season(period="week") + public_holiday + TempKnot))
+report(fit1)
+
+```
+
+# A piecewise linear function of temperature, appropriate seasonal dummies for weekly seasonality and three Fourier terms to capture annual seasonality.
+
+```{r}
+fit2 = merge.tsibble %>%
+  model(piecewise=TSLM(daily_electricity ~ fourier(period = "year", K = 3) + season(period="week") + public_holiday + TempKnot))
+report(fit2)
+
+```
+
+# A quadratic function of temperature and seasonal dummy variables for weekly seasonality.
+
+```{r}
+fit3= merge.tsibble %>%
+  model(quadratic=TSLM(daily_electricity ~ season(period="week") + public_holiday + `Maximum temperature (Degree C)` + I(`Maximum temperature (Degree C)`^2)))
+report(fit3)
+
+
+```
+
+# A quadratic function of temperature, seasonal dummy variables for weekly seasonality and three Fourier terms to capture annual seasonality.
+
+```{r}
+fit4 = merge.tsibble %>%
+  model(quadrtic=TSLM(daily_electricity ~ fourier(period="year", K = 3) + season(period="week") + public_holiday + `Maximum temperature (Degree C)` + I(`Maximum temperature (Degree C)`^2)))
+report(fit4)
+
+```
+
+# Produce residual plots for the models fitted in part 4. Comment on what you can observe.
+
+```{r}
+fit1 %>% 
+  gg_tsresiduals()
+
+fit2 %>% 
+  gg_tsresiduals()
+
+fit3 %>% 
+  gg_tsresiduals()
+
+fit4 %>% 
+  gg_tsresiduals()
+
+```
+For fit1, we can see there are some violations in the assumptions. The residual should be normally distributed but it is skewed to the right The correlogram shows a significant autocorrelation, the autocorrelation shows an overall pattern. The innovation residual plot shows an overall mean of 0 but it also shows a pattern of wave and non-constant variability.
+
+For fit2, the residual shows normally distributed, the ACF plot looks better than the rest of the ACF plot but it still shows autocorrelation in the data as some data points are out of the 95% interval band width. The innovation residual plot also shows mean of 0 and peak around February 2014 but overall shows constant variance.
+
+For fit3, the residual shows a normal distribution centered at 0, the ACF plot also shows some autocorrelation as some points are out of the band width but it's not the worst. The innovation residual plot shows an overall mean of 0, the end points shows a sharp increase and decrease at the end of the plot. The rest of the part shows no pattern but overall the plot shows a pattern with non-constant variance.
+
+For fit 4, likewise the residual shows a normal distribution centered at 0, the ACF plot shows a strong autocorrelation at the first few and last few lags which indicates the data has some autocorrelation. The innovation residual plot also shows an overall mean of 0, the end points shows a sharp increase and decrease from left to right. Overall, it shows an  the plot shows a pattern with non-constant variance. 
+
+
+# Among the models you have fitted in part 4, which model would you select for forecasting? 
+
+```{r}
+glance(fit1) %>%
+  select(r_squared, adj_r_squared, AICc, CV)
+
+glance(fit2) %>%
+  select(r_squared, adj_r_squared, AICc, CV)
+
+glance(fit3) %>%
+  select(r_squared, adj_r_squared, AICc, CV)
+
+glance(fit4) %>%
+  select(r_squared, adj_r_squared, AICc, CV)
+
+
+```
+Based on the AICc, the quadratic model with Fourier term for annual seasonality (fit 4) is selected for forecasting (AICc = 1630.571).
+AICc was chosen because it is a good prediction error estimator for small sample size. 
+We can also see the fit4 shows a higher adjusted r squared and lower CV value than other models.
+
+
+# Based on the models fitted in part 4, forecast the next 5 days using the maximum daily temperatures given in Table 2.
+
+```{r}
+vic_public_holidays2015 = dmy("1/1/15")
+
+vic_temperature_2015.tsibble = data.frame(Date = as_date(c("2015-01-01","2015-01-02", "2015-01-03", "2015-01-04", "2015-01-05")), 
+                                  "Maximum temperature (Degree C)" = c(27.3, 39.4, 38.4, 23.9, 23.9), check.names=FALSE) %>%
+  
+  as_tsibble(index='Date')
+
+vic_temperature_2015.tsibble = vic_temperature_2015.tsibble %>%
+  mutate(public_holiday = ifelse(Date %in% vic_public_holidays2015, 1, 0)) %>%
+  mutate(TempKnot = ifelse(`Maximum temperature (Degree C)` < 25, 0, `Maximum temperature (Degree C)`-25)) %>%
+  as_tsibble() 
+
+fc_1 = fit1 %>%
+  forecast(new_data=vic_temperature_2015.tsibble)
+
+fc_2 = fit2 %>%
+  forecast(new_data=vic_temperature_2015.tsibble)
+
+fc_3 = fit3 %>%
+  forecast(new_data=vic_temperature_2015.tsibble)
+
+fc_4 = fit4 %>%
+  forecast(new_data=vic_temperature_2015.tsibble)
+```
+
+# Plot the actual demand given in vic_electricity_2015.csv with the forecasts obtained in part 7 and their 95% prediction intervals. 
+
+```{r}
+vic_electricity_2015 = read_csv("vic_electricity_2015.csv")
+adj_vic_electricity_2015 = vic_electricity_2015
+adj_vic_electricity_2015$Date = as_date(adj_vic_electricity_2015$Date, origin="1899-12-30")
+
+vic_electricity_2015_tsibble = adj_vic_electricity_2015 %>%
+  group_by(Date = Date) %>%
+  select(Date, Demand) %>%
+  summarise(daily_electricity = sum(Demand)/1000) %>%
+  as_tsibble(index = 'Date') 
+
+vic_electricity_2015_tsibble %>%
+  autoplot()
+
+# plot the actual demand given with the forecast with 95% prediction interval
+fc_1 %>%
+  autoplot(vic_electricity_2015_tsibble,level=95)
+
+fc_2 %>%
+  autoplot(vic_electricity_2015_tsibble,level=95)
+
+fc_3 %>%
+  autoplot(vic_electricity_2015_tsibble,level=95)
+
+fc_4 %>%
+  autoplot(vic_electricity_2015_tsibble,level=95)
+```
+
+Overall, the forecasts are observed to be poor against the actual value.
+Forecast using fit 4 seems to be the best one so far.     
