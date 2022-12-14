@@ -1,0 +1,205 @@
+---
+title: "Stats 326 A3"
+author: "Richard Choi"
+date: '2022-05-15'
+output: html_document
+---
+```{r}
+library(fpp3)
+library(tidyverse)
+library(lubridate)
+library(GGally)
+
+```
+
+# Question 1
+
+# Plot the data and comment on what you can observe
+```{r}
+productivity.df = read_csv("productivity.csv")
+productivity.tsibble = productivity.df %>% 
+  as_tsibble(index='Year')
+
+productivity.tsibble %>% autoplot() + xlab("Year") + 
+  ggtitle("The labour productivity index for primary industries in New Zealand 1978 - 2021")
+```
+We can see that there is a strong positive linear trend in the plot. This means that the New Zealand productivity in primary industries is being more efficient as the time progresses.
+
+# Question 2
+
+# Create a training set that contains data from the years 1978–2016.
+
+```{r}
+productivityTraining = productivity.df %>%
+  filter(Year < 2017) %>%
+  as_tsibble(index='Year')
+```
+
+# Fit Holt’s linear trend model and Holt’s damped linear trend model to the training data.
+
+```{r}
+HoltFit = productivityTraining %>%
+  model(Holt = ETS(Productivity ~ error("A") + trend("A") + season("N")))
+
+DampedFit = productivityTraining %>% 
+  model(Damped = ETS(Productivity ~ error("A") + trend("Ad") + season("N")))
+
+report(HoltFit)
+report(DampedFit)
+```
+
+# Interpret the estimates for the model parameters (α,β∗,ϕ) of Holt’s damped linear trend model.
+α represents smoothing parameter for the level. α = 0.59 shows that the level reacts moderately to each new observation.
+
+Beta* = 0.0001001014/0.5939802 = 0.0001685265 shows less weight to the changing level and more weight to the previous trend. This means that the slope of the model change over time by small degree. 
+
+phi represents the dampness in the Holt's damped linear trend model. Phi value is close to 1 which means that the forecast trend is not much damped and the forecast is trended.
+
+# Compare AICc. Which model has a better fit to the training data?
+
+Comparing AICc, Holt model seems better than Holt's dampged linear trend model at fitting to the training data. 
+
+# Question 3
+
+# Based on the models fitted in part 2, do the following: [9 Marks]
+
+# Forecast the next 5 years into the future.
+
+```{r}
+HoltFc = HoltFit %>%
+  forecast(h=5)
+
+DampedFc = DampedFit %>%
+  forecast(h=5)
+```
+
+# Create a plot where you overlay the point forecasts on the original data.
+
+```{r}
+productivity.tsibble = productivity.df %>%
+  as_tsibble(index="Year")
+
+HoltFc %>% autoplot(productivity.tsibble, level=NULL) + ggtitle("5 year Holt forecast of productivity (2017 - 2022)")
+DampedFc %>% autoplot(productivity.tsibble, level=NULL) + ggtitle("5 year Holt Damped forecast of productivity (2017 - 2022)")
+```
+
+# Compute appropriate measures of forecast accuracy. Comment on which model provides better forecasts.
+
+```{r}
+accuracy(HoltFc, productivity.tsibble)
+accuracy(DampedFc, productivity.tsibble)
+```
+The root mean squared error (RMSE) is 99.45 for Damped model compared to Holt's model RMSE of 208.13. This means that the Holt's damped model is a much more accurate model for forecast.
+
+# Report 95% prediction interval for the year 2022 for the model with the better forecasts. Interpret this in plain English.
+
+```{r}
+DampedFit %>%
+  forecast(h=6) %>%
+  hilo(level=95) %>%
+  filter(Year == '2022')
+
+```
+We estimate that the year 2022 on average will have the productivity index between 3285.73 and 4230.18.
+
+
+# Using the data you have available, discuss how could you reduce the forecast uncertainty?
+
+Using the data available, we could perform cross validation to reduce the forecast uncertainty. Cross validation such as evaluation on a rolling forecasting origin can help to choose a good forecasting model which can reduce the forecast uncertainty.
+
+# Problem 2
+
+# Manually determine an appropriate non-seasonal ARIMA model for the productivity training data (from Problem 1), by doing the following: [9 Marks]
+
+# Conduct a KPSS unit root test on the training data. Keep differencing the data until it is stationary. What is the order of differencing d?
+```{r}
+productivityTraining %>% features(Productivity, unitroot_kpss)
+
+productivityTraining %>%
+mutate(diff_productivity = difference(Productivity)) %>%
+features(diff_productivity, unitroot_kpss)
+
+productivityTraining %>% features(Productivity, unitroot_ndiffs)
+```
+The KPSS test has a null hypothesis that the data is stationery and non-seasonal. We have a p - value = 0.01 which means that we have a strong evidence that the data is not stationery and seasonal. Therefore, differencing was applied so that p value is 0.1 which means that we have a strong evidence that the data is stationery. The order of differencing is 1.
+
+
+# Plot the ACF and PACF plots for the differenced data and comment on what you observe.
+```{r}
+productivityTraining %>% ACF(Productivity %>% difference(1)) %>% autoplot() +
+  labs(y = "ACF", title = "ACF of the differenced series")
+
+productivityTraining %>% PACF(Productivity %>% difference(1)) %>% autoplot() +
+  labs(y = "PACF", title = "PACF of the differenced series")
+```
+Based on ACF and PACF plots, we can determine the working model. 
+
+We see a a dampening sinusoidal pattern in the ACF plot, and a significant spike at lag 2 but none beyond lag 2.
+
+
+
+# Based on what you have learned on lectures, what ARIMA model would you suggest fitting to the training data?
+Therefore, p = 2, and d = 1 so we should fit working model ARIMA(2,1,0) to the training data.
+
+
+
+# Write the equation of this model using backshift notation.
+
+$(1-\phi_1B - \phi_2B^2) * (1-B)y_t = c$
+
+# Fit the following ARIMA models, compare them using information criteria, and write down the equation of the best model using backshift notation: [6 Marks]
+```{r}
+fit = productivityTraining %>%
+  model(ARIMA(Productivity ~ pdq(2,1,0)))
+
+fit %>% report()
+```
+
+# Your suggested model from part 1.
+
+# An automatic model using the stepwise algorithm.
+```{r}
+autostepfit <- productivityTraining %>% 
+  model(stepwise = ARIMA(Productivity))
+
+autostepfit %>% report()
+```
+# An automatic model without using the stepwise algorithm.
+```{r}
+autofit <- productivityTraining %>% 
+  model(stepwise = ARIMA(Productivity, stepwise = FALSE))
+
+autofit %>% report()
+```
+The automatic model using step wise and without step wise have both fitted ARIMA(0,1,1). They both have the same information criteria and AICc value of 486.89 which is lower than the manual fit (AICc=487.39).
+The best model using backshift notation
+$(1 - B)y_t = c + (1 + \phi_1B) \epsilon_t$
+
+
+# Using the best model found in part 2, do the following: [5 Marks]
+
+# Conduct a diagnostic check on the residuals. Discuss whether or not you have any concerns about the model assumptions.
+Based on the AICc criteria, 
+```{r}
+autofit %>% gg_tsresiduals()
+```
+The residual plot shows no apparent pattern, centered around mean 0 but doesn't show constant variance.
+The ACF plot doesn't show any significant point and they are within the band width so there is no concern of autocorrelation.
+The histogram shows normally distributed and centered around mean 0.
+Overall the assumption of the model is fine.
+
+# Forecast 5 years into the future.
+
+```{r}
+fc <-autofit %>% forecast(h = 5)
+fc
+```
+# Overlay the original data with the point forecast and 90% and 99% prediction intervals.
+
+```{r}
+fc %>% autoplot(productivity.tsibble, level = NULL)
+fc %>% autoplot(productivity.tsibble, level = 90)
+fc %>% autoplot(productivity.tsibble, level = 99)
+```
+Our forecast shows overestimation than the actual data.
+
